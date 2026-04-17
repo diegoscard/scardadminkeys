@@ -65,7 +65,6 @@ export default function App() {
   }, []);
 
   const fetchData = async () => {
-    if (!user) return;
     try {
       const results = await Promise.all([
         fetch('/api/keys'),
@@ -95,11 +94,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (user) {
-      fetchData();
-      const interval = setInterval(fetchData, 10000); // Polling every 10s as it's fullstack now
-      return () => clearInterval(interval);
-    }
+    fetchData();
+    const interval = setInterval(fetchData, 10000); // Polling every 10s as it's fullstack now
+    return () => clearInterval(interval);
   }, [user]);
 
   const filteredKeys = useMemo(() => {
@@ -122,7 +119,6 @@ export default function App() {
   const handleLogout = () => signOut(auth);
 
   const handleCreateKey = async () => {
-    if (!user) return;
     setIsGenerating(true);
     try {
       const newKeyValue = generateKey();
@@ -199,33 +195,6 @@ export default function App() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-card border border-border p-8 rounded-2xl shadow-2xl"
-        >
-          <div className="flex justify-center mb-6">
-            <div className="p-4 bg-accent/10 rounded-full">
-              <Shield className="w-12 h-12 text-accent" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold text-text text-center mb-2">Scard Admin Key</h1>
-          <p className="text-text-dim text-center mb-8">Ecosystem Key Management & Control</p>
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-accent hover:opacity-90 text-white font-semibold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-3 active:scale-95"
-          >
-            <Shield className="w-5 h-5" />
-            Acessar Painel Central
-          </button>
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-bg text-text selection:bg-accent/30 p-6 max-w-7xl mx-auto">
       {/* Header */}
@@ -271,8 +240,12 @@ export default function App() {
               <Shield className="w-4 h-4" />
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-semibold leading-none">{user.displayName}</span>
-              <button onClick={handleLogout} className="text-[10px] text-text-dim hover:text-error text-left transition-colors">Logout</button>
+              <span className="text-xs font-semibold leading-none">{user?.displayName || 'Administrador'}</span>
+              {user ? (
+                <button onClick={handleLogout} className="text-[10px] text-text-dim hover:text-error text-left transition-colors">Logout</button>
+              ) : (
+                <button onClick={handleLogin} className="text-[10px] text-accent hover:underline text-left transition-colors">Login Google</button>
+              )}
             </div>
           </div>
         </div>
