@@ -5,6 +5,8 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import pkg from "pg";
+const { Client } = pkg;
 
 dotenv.config();
 
@@ -54,6 +56,47 @@ app.get("/api/keys", async (req, res) => {
 app.post("/api/keys", async (req, res) => {
   const { key, validityDays, databaseId } = req.body;
   try {
+    let externalDbName = 'Local Only';
+    let expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + validityDays);
+    
+    if (databaseId) {
+      const targetDb = await prisma.managedDatabase.findUnique({
+        where: { id: parseInt(databaseId) }
+      });
+      
+      if (targetDb) {
+        externalDbName = targetDb.name;
+        // Connecting to the external ecosystem database
+        const client = new Client({
+          connectionString: targetDb.url,
+          ssl: { rejectUnauthorized: false }
+        });
+        await client.connect();
+        
+        // Creating the target schema dynamically if it doesn't exist (safety fallback)
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS keys (
+            id SERIAL PRIMARY KEY,
+            key_value VARCHAR(50) NOT NULL,
+            system_id VARCHAR(100) NOT NULL,
+            hwid VARCHAR(255),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            last_used_at TIMESTAMP
+          )
+        `);
+        
+        // Inserting the new key straight into the external database "keys" table
+        await client.query(
+          `INSERT INTO keys (key_value, system_id, created_at, expires_at) VALUES ($1, $2, CURRENT_TIMESTAMP, $3)`,
+          [key, externalDbName, expiresAt]
+        );
+        
+        await client.end();
+      }
+    }
+
     const newKey = await prisma.licenseKey.create({
       data: {
         key,
@@ -65,7 +108,7 @@ app.post("/api/keys", async (req, res) => {
     await prisma.auditLog.create({
       data: {
         action: "GENERATE_KEY",
-        details: `Key ${key} generated for database ID ${databaseId || 'none'}`,
+        details: `Key ${key} generated and synced directly to ${externalDbName}`,
       },
     });
     
