@@ -1,0 +1,39 @@
+{
+  "entities": {
+    "ActivationKey": {
+      "title": "Activation Key",
+      "description": "Represents an access key for the ecosystem",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "description": "The formatted activation key" },
+        "status": { "type": "string", "enum": ["available", "activated", "expired"] },
+        "validityDays": { "type": "integer", "description": "Validity period in days" },
+        "hwid": { "type": "string", "description": "The Baseboard Serial of the machine" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "activatedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["key", "status", "validityDays", "createdAt"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Users with administrative access",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin"] }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/keys/{keyId}": {
+      "schema": "ActivationKey",
+      "description": "Collection of all activation keys"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "List of administrators"
+    }
+  }
+}

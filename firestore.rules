@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Admin helper
+    function isAdmin() {
+      return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Validation for Keys
+    function isValidKey(data) {
+      return data.key is string && 
+             data.status in ['available', 'activated', 'expired'] &&
+             data.validityDays is number &&
+             data.createdAt != null;
+    }
+
+    // Keys collection
+    match /keys/{keyId} {
+      allow read, write: if isAdmin();
+      
+      // Specifically allow reading for activation (if we had a public activation route, 
+      // but for now this is strictly an admin panel)
+    }
+
+    // Admins collection - Only existing admins can add other admins, 
+    // but the owner can bootstrap themselves.
+    match /admins/{adminId} {
+      allow read: if request.auth != null && request.auth.uid == adminId;
+      allow create: if request.auth != null && request.auth.token.email == 'diegosilv@hotmail.com.br';
+      allow write: if isAdmin();
+    }
+  }
+}

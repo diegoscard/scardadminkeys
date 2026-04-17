@@ -1,0 +1,6 @@
+{
+  "name": "Scard Admin Key",
+  "description": "Admin panel for managing access keys, hardware binding, and activation control.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

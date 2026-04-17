@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model ManagedDatabase {
+  id        Int      @id @default(autoincrement())
+  name      String   @db.VarChar(100)
+  url       String   @unique @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+  keys      LicenseKey[]
+
+  @@map("managed_databases")
+}
+
+model LicenseKey {
+  id           Int      @id @default(autoincrement())
+  key          String   @unique @db.VarChar(255)
+  status       String   @default("available") // available, activated, expired
+  hwid         String?  @db.VarChar(255)
+  validityDays Int      @map("validity_days")
+  createdAt    DateTime @default(now()) @map("created_at")
+  activatedAt  DateTime? @map("activated_at")
+  expiresAt    DateTime? @map("expires_at")
+  
+  databaseId   Int?     @map("database_id")
+  database     ManagedDatabase? @relation(fields: [databaseId], references: [id])
+
+  @@map("license_keys")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  action    String   @db.VarChar(100)
+  details   String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}

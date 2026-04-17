@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0F1115;
+  --color-card: #1C1F26;
+  --color-accent: #3B82F6;
+  --color-accent-glow: rgba(59, 130, 246, 0.2);
+  --color-text: #F3F4F6;
+  --color-text-dim: #9CA3AF;
+  --color-border: #2D333E;
+  --color-success: #10B981;
+  --color-error: #EF4444;
+
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+@layer base {
+  body {
+    @apply bg-bg text-text antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+}
+
+.bento-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: auto auto 1fr;
+  gap: 16px;
+}
+
+.bento-card {
+  @apply bg-card border border-border rounded-2xl p-5 flex flex-col shadow-sm;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-border rounded-full hover:bg-text-dim/30 transition-colors;
+}
