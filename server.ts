@@ -14,6 +14,14 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const prisma = new PrismaClient();
 
+// Logger & Request Debug
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    console.log(`[API] ${req.method} ${req.path}`);
+  }
+  next();
+});
+
 // Middleware to check for DATABASE_URL
 app.use((req, res, next) => {
   if (!process.env.DATABASE_URL && req.path.startsWith('/api/')) {

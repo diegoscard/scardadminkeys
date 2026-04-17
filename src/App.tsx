@@ -20,13 +20,6 @@ import {
   Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, googleProvider } from './lib/firebase';
-import { 
-  onAuthStateChanged, 
-  signInWithPopup, 
-  signOut,
-  User 
-} from 'firebase/auth';
 import { ActivationKey, KeyStatus, ManagedDatabase, AuditLog, DashboardStats } from './types';
 
 // Helper to generate key: XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
@@ -37,7 +30,6 @@ const generateKey = () => {
 };
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState<ActivationKey[]>([]);
   const [databases, setDatabases] = useState<ManagedDatabase[]>([]);
@@ -56,14 +48,6 @@ export default function App() {
   const [dbUrl, setDbUrl] = useState('');
   const [isAddingDb, setIsAddingDb] = useState(false);
 
-  useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      setLoading(false);
-    });
-    return () => unsubscribeAuth();
-  }, []);
-
   const fetchData = async () => {
     try {
       const results = await Promise.all([
@@ -73,15 +57,28 @@ export default function App() {
         fetch('/api/stats')
       ]);
 
+      const data = [];
       for (const res of results) {
-        if (res.status === 503) {
-          const err = await res.json();
-          setDbError(err.message);
-          return;
+        const contentType = res.headers.get("content-type");
+        if (res.ok && contentType && contentType.includes("application/json")) {
+          data.push(await res.json());
+        } else {
+          const text = await res.text();
+          if (!res.ok) {
+            if (res.status === 503 && contentType?.includes("application/json")) {
+              const err = JSON.parse(text);
+              setDbError(err.message);
+              return;
+            }
+            throw new Error(`Erro ${res.status}: ${text.substring(0, 50)}`);
+          }
+          // res.ok is true but not JSON (likely Vite SPA fallback)
+          console.error("Expected JSON but got:", text.substring(0, 100));
+          throw new Error("O servidor retornou uma resposta inesperada (HTML). Verifique se o backend está rodando corretamente.");
         }
       }
       
-      const [k, d, l, s] = await Promise.all(results.map(r => r.json()));
+      const [k, d, l, s] = data;
       
       setKeys(k);
       setDatabases(d);
@@ -95,9 +92,10 @@ export default function App() {
 
   useEffect(() => {
     fetchData();
+    setLoading(false);
     const interval = setInterval(fetchData, 10000); // Polling every 10s as it's fullstack now
     return () => clearInterval(interval);
-  }, [user]);
+  }, []);
 
   const filteredKeys = useMemo(() => {
     return keys.filter(k => {
@@ -107,16 +105,6 @@ export default function App() {
       return matchesSearch && matchesFilter;
     });
   }, [keys, searchTerm, statusFilter]);
-
-  const handleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleLogout = () => signOut(auth);
 
   const handleCreateKey = async () => {
     setIsGenerating(true);
@@ -240,12 +228,7 @@ export default function App() {
               <Shield className="w-4 h-4" />
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-semibold leading-none">{user?.displayName || 'Administrador'}</span>
-              {user ? (
-                <button onClick={handleLogout} className="text-[10px] text-text-dim hover:text-error text-left transition-colors">Logout</button>
-              ) : (
-                <button onClick={handleLogin} className="text-[10px] text-accent hover:underline text-left transition-colors">Login Google</button>
-              )}
+              <span className="text-xs font-semibold leading-none">Administrador</span>
             </div>
           </div>
         </div>
