@@ -136,9 +136,7 @@ export default function App() {
     }
   };
 
-  const toggleStatus = async (item: ActivationKey) => {
-    const nextStatus = item.status === 'available' ? 'activated' : 
-                      item.status === 'activated' ? 'expired' : 'available';
+  const toggleStatus = async (item: ActivationKey, nextStatus: 'activated' | 'expired') => {
     const res = await fetch(`/api/keys/${item.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -255,8 +253,8 @@ export default function App() {
       ) : activeTab === 'licenses' ? (
         <div className="bento-grid">
           {/* Stats Section */}
-          <StatCard label="Licenças Ativas" value={stats.activated} trend="↑ 12% vs last month" color="accent" />
-          <StatCard label="Disponíveis" value={stats.total - stats.activated - stats.expired} trend="Ready for use" color="success" />
+          <StatCard label="Total Geradas" value={stats.total} trend="All time" color="success" />
+          <StatCard label="Licenças Ativas" value={stats.activated} trend="Ready or in use" color="accent" />
           <StatCard label="Expiradas" value={stats.expired} trend="Action required" color="error" />
           <StatCard label="Sistemas Vinculados" value={stats.systems} trend="Integrated DBs" color="accent" />
 
@@ -399,22 +397,21 @@ export default function App() {
                           )}
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                            item.status === 'activated' ? 'bg-accent/10 text-accent border-accent/20' :
-                            item.status === 'expired' ? 'bg-error/10 text-error border-error/20' :
-                            'bg-success/10 text-success border-success/20'
-                          }`}>
-                            {item.status.toUpperCase()}
-                          </span>
+                          <select
+                            value={item.status}
+                            onChange={(e) => toggleStatus(item, e.target.value as 'activated' | 'expired')}
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer ${
+                              item.status === 'activated' ? 'bg-success/10 text-success border-success/20' :
+                              item.status === 'expired' ? 'bg-error/10 text-error border-error/20' :
+                              'bg-text-dim text-bg border-text-dim'
+                            }`}
+                          >
+                            <option value="activated" className="bg-bg text-success font-bold">ACTIVATED</option>
+                            <option value="expired" className="bg-bg text-error font-bold">EXPIRED</option>
+                          </select>
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => toggleStatus(item)}
-                              className="text-[10px] font-bold text-accent uppercase hover:underline"
-                            >
-                              Mudar Status
-                            </button>
                             <button 
                               onClick={() => handleDeleteKey(item.id)}
                               className="p-1.5 text-text-dim hover:text-error transition-colors bg-bg/50 rounded-lg"

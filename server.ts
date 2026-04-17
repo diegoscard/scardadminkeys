@@ -16,14 +16,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const prisma = new PrismaClient();
 
-// Logger & Request Debug
-app.use((req, res, next) => {
-  if (req.path.startsWith('/api/')) {
-    console.log(`[API] ${req.method} ${req.path}`);
-  }
-  next();
-});
-
 // Middleware to check for DATABASE_URL
 app.use((req, res, next) => {
   if (!process.env.DATABASE_URL && req.path.startsWith('/api/')) {
@@ -46,11 +38,91 @@ app.get("/api/health", (req, res) => {
 
 // Keys Management
 app.get("/api/keys", async (req, res) => {
-  const keys = await prisma.licenseKey.findMany({
-    include: { database: true },
-    orderBy: { createdAt: "desc" },
-  });
-  res.json(keys);
+  try {
+    const keys = await prisma.licenseKey.findMany({
+      include: { database: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Agrupar chaves por banco de dados externo para consulta em lote (otimização)
+    const dbKeysMap = new Map();
+    for (const k of keys) {
+      if (k.database) {
+        if (!dbKeysMap.has(k.database.id)) {
+          dbKeysMap.set(k.database.id, {
+            url: k.database.url,
+            keys: []
+          });
+        }
+        dbKeysMap.get(k.database.id).keys.push(k);
+      }
+    }
+
+    // Buscar o HWID dos bancos externos para refletir no painel central
+    for (const [dbId, dbData] of dbKeysMap.entries()) {
+      try {
+        const client = new Client({
+          connectionString: dbData.url,
+          ssl: { rejectUnauthorized: false } // Permite certs auto-assinados comuns em bancos SQL
+        });
+        await client.connect();
+        
+        // Busca também o status do banco para forçar expiração localmente se necessário
+        let queryStr = 'SELECT key_value, hwid FROM keys WHERE hwid IS NOT NULL';
+        try {
+           const columnCheck = await client.query(`SELECT column_name FROM information_schema.columns WHERE table_name='keys' and column_name='status'`);
+           if (columnCheck.rows.length > 0) {
+              queryStr = 'SELECT key_value, hwid, status FROM keys WHERE hwid IS NOT NULL OR status = \'expired\'';
+           }
+        } catch (e) { }
+
+        const extKeys = await client.query(queryStr);
+        
+        const extKeysMap = new Map();
+        for (const row of extKeys.rows) {
+          extKeysMap.set(row.key_value, row);
+        }
+
+        for (const localKey of dbData.keys) {
+          const extData = extKeysMap.get(localKey.key);
+          if (extData) {
+            const hwid = extData.hwid;
+            const status = extData.status;
+
+            if (hwid && hwid !== localKey.hwid) {
+               localKey.hwid = hwid;
+            }
+
+            if (status === 'expired' && localKey.status !== 'expired') {
+               localKey.status = 'expired';
+               await prisma.licenseKey.update({
+                  where: { id: localKey.id },
+                  data: { status: 'expired' }
+               }).catch(e => console.error(e));
+            } else if (hwid && (!localKey.hwid || localKey.status === 'available')) {
+              localKey.status = 'activated';
+              
+              await prisma.licenseKey.update({
+                where: { id: localKey.id },
+                data: { 
+                  hwid: hwid, 
+                  status: 'activated',
+                  ...(localKey.activatedAt ? {} : { activatedAt: new Date() })
+                }
+              }).catch(e => console.error("Erro ao sincronizar status local:", e));
+            }
+          }
+        }
+        await client.end();
+      } catch (err) {
+        console.error(`Falha ao sincronizar leituras do banco externo DB ID ${dbId}:`, err);
+      }
+    }
+
+    res.json(keys);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/keys", async (req, res) => {
@@ -86,11 +158,19 @@ app.post("/api/keys", async (req, res) => {
             last_used_at TIMESTAMP
           )
         `);
+
+        // Tentar adicionar a coluna status, caso a tabela já existisse sem ela
+        try {
+          await client.query(`ALTER TABLE keys ADD COLUMN status VARCHAR(50) DEFAULT 'active'`);
+        } catch (e) {
+          // A coluna provavelmente já existe, podemos ignorar.
+        }
         
         // Inserting the new key straight into the external database "keys" table
+        // Immediately inserting as 'active' (waiting to capture HWID)
         await client.query(
-          `INSERT INTO keys (key_value, system_id, created_at, expires_at) VALUES ($1, $2, CURRENT_TIMESTAMP, $3)`,
-          [key, externalDbName, expiresAt]
+          `INSERT INTO keys (key_value, system_id, created_at, expires_at, status) VALUES ($1, $2, CURRENT_TIMESTAMP, $3, $4)`,
+          [key, externalDbName, expiresAt, 'active']
         );
         
         await client.end();
@@ -102,6 +182,7 @@ app.post("/api/keys", async (req, res) => {
         key,
         validityDays,
         databaseId: databaseId ? parseInt(databaseId) : null,
+        status: 'activated', // Defaulting to activated initially instead of available
       },
     });
     
@@ -135,9 +216,46 @@ app.patch("/api/keys/:id", async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   try {
+    const key = await prisma.licenseKey.findUnique({
+      where: { id: parseInt(id) },
+      include: { database: true }
+    });
+
+    if (key?.database) {
+      try {
+        const client = new Client({
+          connectionString: key.database.url,
+          ssl: { rejectUnauthorized: false }
+        });
+        await client.connect();
+        
+        // Sincroniza o status para o banco externo (db_sys2).
+        // Tenta atualizar a coluna status. Se a tabela externa não tiver essa coluna, 
+        // silenciaremos o erro e usaremos fallback para expirar por data se necessário.
+        try {
+          if (status === 'expired') {
+             await client.query(`UPDATE keys SET status = 'expired' WHERE key_value = $1`, [key.key]);
+          } else if (status === 'activated') {
+             await client.query(`UPDATE keys SET status = 'active' WHERE key_value = $1`, [key.key]);
+          } else if (status === 'available') { // Keeping logic for fallback or clear manually
+             await client.query(`UPDATE keys SET hwid = NULL, status = 'active' WHERE key_value = $1`, [key.key]);
+          }
+        } catch (e) {
+          console.error('The external DB might not have a status column yet.', e);
+        }
+
+        await client.end();
+      } catch (err) {
+         console.error('Failed to sync status to external DB', err);
+      }
+    }
+
     const updated = await prisma.licenseKey.update({
       where: { id: parseInt(id) },
-      data: { status },
+      data: { 
+        status,
+        ...(status === 'available' ? { hwid: null, activatedAt: null } : {})
+      },
     });
     res.json(updated);
   } catch (err: any) {
