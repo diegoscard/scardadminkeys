@@ -263,6 +263,56 @@ app.patch("/api/keys/:id", async (req, res) => {
   }
 });
 
+app.post("/api/keys/:id/renew", async (req, res) => {
+  const { id } = req.params;
+  const { additionalDays } = req.body;
+  try {
+    const key = await prisma.licenseKey.findUnique({
+      where: { id: parseInt(id) },
+      include: { database: true }
+    });
+
+    if (!key) throw new Error("Key not found");
+
+    if (key.database) {
+      try {
+        const client = new Client({
+          connectionString: key.database.url,
+          ssl: { rejectUnauthorized: false }
+        });
+        await client.connect();
+        
+        await client.query(`
+          UPDATE keys 
+          SET expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP) + ($1 || ' days')::interval,
+              status = 'active'
+          WHERE key_value = $2
+        `, [additionalDays, key.key]);
+        
+        await client.end();
+      } catch (err) {
+        console.error('Failed to sync renewal to external DB', err);
+      }
+    }
+
+    const updated = await prisma.licenseKey.update({
+      where: { id: parseInt(id) },
+      data: { 
+        validityDays: key.validityDays + additionalDays,
+        status: 'activated'
+      },
+    });
+    
+    await prisma.auditLog.create({
+      data: { action: "RENEW_KEY", details: `Key ID ${id} was renewed for ${additionalDays} days` }
+    });
+    
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Managed Databases (Ecosystem)
 app.get("/api/databases", async (req, res) => {
   const dbs = await prisma.managedDatabase.findMany({
@@ -293,13 +343,18 @@ app.delete("/api/databases/:id", async (req, res) => {
   }
 });
 
-// Logs
-app.get("/api/logs", async (req, res) => {
-  const logs = await prisma.auditLog.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
-  res.json(logs);
+app.put("/api/databases/:id", async (req, res) => {
+  const { id } = req.params;
+  const { url } = req.body;
+  try {
+    const updatedDb = await prisma.managedDatabase.update({
+      where: { id: parseInt(id) },
+      data: { url },
+    });
+    res.json(updatedDb);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Stats
