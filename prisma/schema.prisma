@@ -20,6 +20,7 @@ model ManagedDatabase {
 model LicenseKey {
   id           Int      @id @default(autoincrement())
   key          String   @unique @db.VarChar(255)
+  storeName    String?  @map("store_name") @db.VarChar(255)
   status       String   @default("available") // available, activated, expired
   hwid         String?  @db.VarChar(255)
   validityDays Int      @map("validity_days")
@@ -31,13 +32,4 @@ model LicenseKey {
   database     ManagedDatabase? @relation(fields: [databaseId], references: [id])
 
   @@map("license_keys")
-}
-
-model AuditLog {
-  id        Int      @id @default(autoincrement())
-  action    String   @db.VarChar(100)
-  details   String?  @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@map("audit_logs")
 }

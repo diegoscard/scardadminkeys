@@ -126,7 +126,7 @@ app.get("/api/keys", async (req, res) => {
 });
 
 app.post("/api/keys", async (req, res) => {
-  const { key, validityDays, databaseId } = req.body;
+  const { key, validityDays, databaseId, storeName } = req.body;
   try {
     let externalDbName = 'Local Only';
     let expiresAt = new Date();
@@ -181,15 +181,9 @@ app.post("/api/keys", async (req, res) => {
       data: {
         key,
         validityDays,
+        storeName,
         databaseId: databaseId ? parseInt(databaseId) : null,
         status: 'activated', // Defaulting to activated initially instead of available
-      },
-    });
-    
-    await prisma.auditLog.create({
-      data: {
-        action: "GENERATE_KEY",
-        details: `Key ${key} generated and synced directly to ${externalDbName}`,
       },
     });
     
@@ -202,10 +196,43 @@ app.post("/api/keys", async (req, res) => {
 app.delete("/api/keys/:id", async (req, res) => {
   const { id } = req.params;
   try {
-    const deleted = await prisma.licenseKey.delete({ where: { id: parseInt(id) } });
-    await prisma.auditLog.create({
-      data: { action: "DELETE_KEY", details: `Key ID ${id} was deleted` },
+    // Busca a chave primeiro para saber o valor (key_value) e o banco associado
+    const license = await prisma.licenseKey.findUnique({
+      where: { id: parseInt(id) },
+      include: { database: true }
     });
+
+    if (!license) {
+      return res.status(404).json({ error: "Chave não encontrada" });
+    }
+
+    // Bancos para sincronizar a remoção
+    const dbsToSync = new Set<string>();
+    
+    // Adiciona o db_sys1 solicitado pelo usuário
+    dbsToSync.add("postgres://6fcf22b80592e962ead98581f65b47b34a398eeb3d1bc37a6f901f9f2d71515c:sk_Vs9SKj0Xpt11YRiiyHist@db.prisma.io:5432/postgres?sslmode=require");
+    
+    // Se houver um banco específico associado à chave no gerenciador, adiciona ele também
+    if (license.database?.url) {
+      dbsToSync.add(license.database.url);
+    }
+    
+    for (const url of dbsToSync) {
+      try {
+        const client = new Client({
+          connectionString: url,
+          ssl: { rejectUnauthorized: false }
+        });
+        await client.connect();
+        await client.query('DELETE FROM keys WHERE key_value = $1', [license.key]);
+        await client.end();
+      } catch (err) {
+        console.error(`Falha ao remover chave de ${url} durante deleção local:`, err);
+      }
+    }
+
+    const deleted = await prisma.licenseKey.delete({ where: { id: parseInt(id) } });
+    
     res.json(deleted);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -274,6 +301,25 @@ app.post("/api/keys/:id/renew", async (req, res) => {
 
     if (!key) throw new Error("Key not found");
 
+    const updated = await prisma.licenseKey.update({
+      where: { id: parseInt(id) },
+      data: { 
+        validityDays: Math.max(0, key.validityDays + additionalDays),
+      },
+    });
+
+    // Re-calcula status baseado na nova validade
+    const start = updated.activatedAt ? new Date(updated.activatedAt) : new Date(updated.createdAt);
+    const end = new Date(start.getTime() + updated.validityDays * 24 * 60 * 60 * 1000);
+    const isNowExpired = end.getTime() <= Date.now();
+    
+    const finalStatus = isNowExpired ? 'expired' : 'activated';
+    
+    await prisma.licenseKey.update({
+      where: { id: parseInt(id) },
+      data: { status: finalStatus }
+    });
+    
     if (key.database) {
       try {
         const client = new Client({
@@ -282,32 +328,25 @@ app.post("/api/keys/:id/renew", async (req, res) => {
         });
         await client.connect();
         
+        // No banco externo, sincronizamos a data de expiração real
+        const extStatus = finalStatus === 'expired' ? 'expired' : 'active';
         await client.query(`
           UPDATE keys 
-          SET expires_at = GREATEST(expires_at, CURRENT_TIMESTAMP) + ($1 || ' days')::interval,
-              status = 'active'
-          WHERE key_value = $2
-        `, [additionalDays, key.key]);
+          SET expires_at = CASE 
+            WHEN $1 > 0 THEN GREATEST(expires_at, CURRENT_TIMESTAMP) + ($1 || ' days')::interval
+            ELSE expires_at + ($1 || ' days')::interval
+          END,
+          status = $2
+          WHERE key_value = $3
+        `, [additionalDays, extStatus, key.key]);
         
         await client.end();
       } catch (err) {
         console.error('Failed to sync renewal to external DB', err);
       }
     }
-
-    const updated = await prisma.licenseKey.update({
-      where: { id: parseInt(id) },
-      data: { 
-        validityDays: key.validityDays + additionalDays,
-        status: 'activated'
-      },
-    });
     
-    await prisma.auditLog.create({
-      data: { action: "RENEW_KEY", details: `Key ID ${id} was renewed for ${additionalDays} days` }
-    });
-    
-    res.json(updated);
+    res.json({ ...updated, status: finalStatus });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -404,13 +443,6 @@ app.post("/api/activate", async (req, res) => {
         hwid,
         activatedAt,
         expiresAt,
-      },
-    });
-
-    await prisma.auditLog.create({
-      data: {
-        action: "KEY_ACTIVATED",
-        details: `Key ${key} activated on HWID ${hwid}`,
       },
     });
 

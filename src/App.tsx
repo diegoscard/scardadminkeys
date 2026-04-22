@@ -19,7 +19,8 @@ import {
   PlusCircle,
   Edit2,
   Copy,
-  Check
+  Check,
+  Minus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ActivationKey, KeyStatus, ManagedDatabase, DashboardStats } from './types';
@@ -40,6 +41,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<KeyStatus | 'all'>('all');
   const [newKeyValidity, setNewKeyValidity] = useState<number>(30);
+  const [storeName, setStoreName] = useState('');
   const [selectedDb, setSelectedDb] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -61,6 +63,7 @@ export default function App() {
   const [itemToDelete, setItemToDelete] = useState<{ type: 'key' | 'db', id: number } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [adjDaysMap, setAdjDaysMap] = useState<Record<number, string>>({});
 
   const handleCopyKey = (keyString: string) => {
     navigator.clipboard.writeText(keyString);
@@ -123,6 +126,7 @@ export default function App() {
   const filteredKeys = useMemo(() => {
     return keys.filter(k => {
       const matchesSearch = k.key.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          (k.storeName && k.storeName.toLowerCase().includes(searchTerm.toLowerCase())) ||
                           (k.hwid && k.hwid.toLowerCase().includes(searchTerm.toLowerCase()));
       const matchesFilter = statusFilter === 'all' || k.status === statusFilter;
       return matchesSearch && matchesFilter;
@@ -139,10 +143,12 @@ export default function App() {
         body: JSON.stringify({
           key: newKeyValue,
           validityDays: newKeyValidity,
-          databaseId: selectedDb || null
+          databaseId: selectedDb || null,
+          storeName: storeName
         })
       });
       if (res.ok) {
+        setStoreName('');
         fetchData();
       }
     } catch (err) {
@@ -271,6 +277,24 @@ export default function App() {
     }
   };
 
+  const handleRenewKeyDirect = async (id: number, additionalDays: number) => {
+    try {
+      const res = await fetch(`/api/keys/${id}/renew`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ additionalDays })
+      });
+      if (res.ok) {
+        fetchData();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao ajustar validade');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const closeRenewModal = () => {
     setIsRenewModalOpen(false);
     setRenewKeyId('');
@@ -381,6 +405,17 @@ export default function App() {
               </div>
 
               <div>
+                <label className="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3 block">Nome da Loja</label>
+                <input 
+                  type="text" 
+                  placeholder="Digite o nome da loja..."
+                  className="w-full bg-card border border-border rounded-xl py-3 px-4 text-xs font-bold text-text outline-none focus:border-accent"
+                  value={storeName}
+                  onChange={(e) => setStoreName(e.target.value)}
+                />
+              </div>
+
+              <div>
                 <label className="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3 block">Vincular ao Sistema</label>
                 <select 
                   value={selectedDb}
@@ -432,9 +467,9 @@ export default function App() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-bg/50 text-[10px] uppercase font-bold tracking-widest text-text-dim border-b border-border">
+                    <th className="px-6 py-4">Nome da Loja</th>
                     <th className="px-6 py-4">Chave de Acesso</th>
                     <th className="px-6 py-4">Sistema Alvo</th>
-                    <th className="px-6 py-4">Validade</th>
                     <th className="px-6 py-4">Expira em</th>
                     <th className="px-6 py-4">HWID (Placa-Mãe)</th>
                     <th className="px-6 py-4">Status</th>
@@ -457,25 +492,66 @@ export default function App() {
                         animate={{ opacity: 1 }}
                         className="group transition-colors hover:bg-white/[0.02]"
                       >
+                         <td className="px-6 py-4">
+                          <span className="text-[10px] font-bold text-accent uppercase tracking-wider">{item.storeName || '-'}</span>
+                        </td>
                         <td className="px-6 py-4">
-                          <span className="font-mono text-accent text-xs font-medium">{item.key}</span>
+                          <span className="font-mono text-text-dim text-xs font-medium">{item.key}</span>
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-[10px] font-bold text-text-dim">{item.database?.name || 'Local Only'}</span>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className="text-[10px] font-bold text-text-dim">{item.validityDays} Dias</span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="text-[10px] font-bold text-text-dim">
-                            {(() => {
-                               const start = item.activatedAt ? new Date(item.activatedAt) : new Date(item.createdAt);
-                               const end = new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
-                               const diff = Math.ceil((end.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                               if (item.status === 'expired' || diff <= 0) return <span className="text-error">Expirou</span>;
-                               return `${diff} dias restantes`;
-                            })()}
-                          </span>
+                         <td className="px-6 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-text-dim">
+                              {(() => {
+                                const start = item.activatedAt ? new Date(item.activatedAt) : new Date(item.createdAt);
+                                const end = new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
+                                const diff = Math.ceil((end.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                                if (item.status === 'expired' || diff <= 0) return <span className="text-error">Expirou</span>;
+                                return `${diff} dias restantes`;
+                              })()}
+                            </span>
+                            <div className="flex items-center gap-1.5 ml-auto">
+                              <button 
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const days = parseInt(adjDaysMap[item.id]);
+                                  if (isNaN(days) || days <= 0) return;
+                                  await handleRenewKeyDirect(item.id, -days);
+                                  setAdjDaysMap(prev => ({ ...prev, [item.id]: '' }));
+                                }}
+                                className="p-1 hover:text-error text-text-dim bg-white shadow-sm rounded border border-border transition-colors active:scale-95"
+                                title={`Remover ${adjDaysMap[item.id] || 0} dia(s)`}
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                              <input 
+                                type="number"
+                                min="1"
+                                placeholder="0"
+                                value={adjDaysMap[item.id] || ''}
+                                onChange={(e) => {
+                                  setAdjDaysMap(prev => ({ ...prev, [item.id]: e.target.value }));
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="w-10 h-7 bg-bg border border-border rounded text-[10px] font-bold text-center appearance-none focus:border-accent outline-none placeholder:text-text-dim/30 shadow-inner"
+                              />
+                              <button 
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  const days = parseInt(adjDaysMap[item.id]);
+                                  if (isNaN(days) || days <= 0) return;
+                                  await handleRenewKeyDirect(item.id, days);
+                                  setAdjDaysMap(prev => ({ ...prev, [item.id]: '' }));
+                                }}
+                                className="p-1 hover:text-accent text-text-dim bg-white shadow-sm rounded border border-border transition-colors active:scale-95"
+                                title={`Adicionar ${adjDaysMap[item.id] || 0} dia(s)`}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
                         </td>
                         <td className="px-6 py-4">
                           {item.hwid ? (

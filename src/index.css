@@ -41,3 +41,14 @@
 .custom-scrollbar::-webkit-scrollbar-thumb {
   @apply bg-border rounded-full hover:bg-text-dim/30 transition-colors;
 }
+
+/* Hide number input spinners */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}
