@@ -17,7 +17,9 @@ import {
   Database,
   ExternalLink,
   PlusCircle,
-  Edit2
+  Edit2,
+  Copy,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ActivationKey, KeyStatus, ManagedDatabase, DashboardStats } from './types';
@@ -55,6 +57,16 @@ export default function App() {
   const [renewKeyId, setRenewKeyId] = useState<string>('');
   const [renewDays, setRenewDays] = useState<number>(30);
   const [isRenewing, setIsRenewing] = useState(false);
+
+  const [itemToDelete, setItemToDelete] = useState<{ type: 'key' | 'db', id: number } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  const handleCopyKey = (keyString: string) => {
+    navigator.clipboard.writeText(keyString);
+    setCopiedKey(keyString);
+    setTimeout(() => setCopiedKey(null), 2000);
+  };
 
   const fetchData = async () => {
     try {
@@ -140,11 +152,8 @@ export default function App() {
     }
   };
 
-  const handleDeleteKey = async (id: number) => {
-    if (window.confirm('Realmente deseja excluir esta chave?')) {
-      const res = await fetch(`/api/keys/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchData();
-    }
+  const handleDeleteKey = (id: number) => {
+    setItemToDelete({ type: 'key', id });
   };
 
   const openRenewModalPerKey = (key: ActivationKey) => {
@@ -183,10 +192,26 @@ export default function App() {
     }
   };
 
-  const handleDeleteDatabase = async (id: number) => {
-    if (confirm('Deseja remover este sistema do ecossistema?')) {
-      const res = await fetch(`/api/databases/${id}`, { method: 'DELETE' });
-      if (res.ok) fetchData();
+  const handleDeleteDatabase = (id: number) => {
+    setItemToDelete({ type: 'db', id });
+  };
+
+  const confirmDelete = async () => {
+    if (!itemToDelete) return;
+    setIsDeleting(true);
+    try {
+      if (itemToDelete.type === 'key') {
+        const res = await fetch(`/api/keys/${itemToDelete.id}`, { method: 'DELETE' });
+        if (res.ok) fetchData();
+      } else if (itemToDelete.type === 'db') {
+        const res = await fetch(`/api/databases/${itemToDelete.id}`, { method: 'DELETE' });
+        if (res.ok) fetchData();
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsDeleting(false);
+      setItemToDelete(null);
     }
   };
 
@@ -479,6 +504,13 @@ export default function App() {
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button 
+                              onClick={() => handleCopyKey(item.key)}
+                              className="p-1.5 text-text-dim hover:text-white transition-colors bg-bg/50 rounded-lg"
+                              title="Copiar Chave"
+                            >
+                              {copiedKey === item.key ? <Check className="w-3 h-3 text-success" /> : <Copy className="w-3 h-3" />}
+                            </button>
+                            <button 
                               onClick={() => openRenewModalPerKey(item)}
                               className="p-1.5 text-text-dim hover:text-accent transition-colors bg-bg/50 rounded-lg"
                               title="Renovar Chave"
@@ -693,6 +725,57 @@ export default function App() {
                 >
                   <RefreshCw className={`w-4 h-4 ${isRenewing ? 'animate-spin' : ''}`} />
                   {isRenewing ? 'Renovando...' : 'Confirmar Renovação'}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Modal for Deletion Confirmation */}
+      <AnimatePresence>
+        {itemToDelete && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-card w-full max-w-sm rounded-2xl border border-border shadow-2xl overflow-hidden"
+            >
+              <div className="p-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-error/20 text-error flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-6 h-6" />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Excluir {itemToDelete.type === 'key' ? 'Chave' : 'Sistema'}</h3>
+                <p className="text-sm text-text-dim">
+                  Tem certeza que deseja excluir est{itemToDelete.type === 'key' ? 'a chave' : 'e sistema'}? Esta ação é permanente e não poderá ser desfeita.
+                </p>
+              </div>
+              <div className="border-t border-border p-4 bg-bg/50 flex flex-col-reverse sm:flex-row justify-end gap-3">
+                <button 
+                  onClick={() => setItemToDelete(null)}
+                  className="px-6 py-2 rounded-xl text-sm font-semibold hover:bg-white/5 transition-colors sm:w-auto w-full"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmDelete}
+                  disabled={isDeleting}
+                  className="bg-error hover:bg-red-600 text-white font-bold py-2 px-6 rounded-xl text-sm transition-all active:scale-95 disabled:opacity-50 sm:w-auto w-full flex items-center justify-center gap-2"
+                >
+                  {isDeleting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Excluindo...
+                    </>
+                  ) : (
+                    'Excluir'
+                  )}
                 </button>
               </div>
             </motion.div>
