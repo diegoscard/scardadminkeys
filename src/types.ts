@@ -10,10 +10,10 @@ export interface ManagedDatabase {
 export interface ActivationKey {
   id: number;
   key: string;
-  storeName?: string;
   status: KeyStatus;
   validityDays: number;
   hwid?: string;
+  shopName?: string;
   createdAt: string;
   activatedAt?: string;
   expiresAt?: string;

@@ -41,9 +41,9 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<KeyStatus | 'all'>('all');
   const [newKeyValidity, setNewKeyValidity] = useState<number>(30);
-  const [storeName, setStoreName] = useState('');
   const [selectedDb, setSelectedDb] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [shopName, setShopName] = useState('');
   const [dbError, setDbError] = useState<string | null>(null);
   
   const [activeTab, setActiveTab] = useState<'licenses' | 'ecosystem'>('licenses');
@@ -106,9 +106,12 @@ export default function App() {
       setDatabases(d);
       setStats(s);
       
-      if (d.length > 0 && !selectedDb) {
-        setSelectedDb(d[0].id.toString());
-      }
+      setSelectedDb(prev => {
+        if (d.length > 0 && !prev) {
+          return d[0].id.toString();
+        }
+        return prev;
+      });
       
       setDbError(null);
     } catch (err) {
@@ -125,9 +128,12 @@ export default function App() {
 
   const filteredKeys = useMemo(() => {
     return keys.filter(k => {
-      const matchesSearch = k.key.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          (k.storeName && k.storeName.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                          (k.hwid && k.hwid.toLowerCase().includes(searchTerm.toLowerCase()));
+      const searchLower = searchTerm.toLowerCase();
+      const matchesSearch = 
+        k.key.toLowerCase().includes(searchLower) || 
+        (k.hwid && k.hwid.toLowerCase().includes(searchLower)) ||
+        (k.shopName && k.shopName.toLowerCase().includes(searchLower)) ||
+        (k.database?.name && k.database.name.toLowerCase().includes(searchLower));
       const matchesFilter = statusFilter === 'all' || k.status === statusFilter;
       return matchesSearch && matchesFilter;
     });
@@ -144,11 +150,11 @@ export default function App() {
           key: newKeyValue,
           validityDays: newKeyValidity,
           databaseId: selectedDb || null,
-          storeName: storeName
+          shopName: shopName.trim() || null
         })
       });
       if (res.ok) {
-        setStoreName('');
+        setShopName('');
         fetchData();
       }
     } catch (err) {
@@ -323,7 +329,7 @@ export default function App() {
               <nav className="flex gap-4 ml-6">
                 <button 
                   onClick={() => setActiveTab('licenses')} 
-                  className={`text-xs font-bold uppercase transition-colors hover:text-accent ${activeTab === 'licenses' ? 'text-accent' : 'text-text-dim'}`}
+                  className={`text-xs font-bold uppercase transition-colors hover:text-accent pl-0 ml-[-25px] ${activeTab === 'licenses' ? 'text-accent' : 'text-text-dim'}`}
                 >
                   Licenças
                 </button>
@@ -336,20 +342,6 @@ export default function App() {
               </nav>
             </div>
           </div>
-        </div>
-        
-        <div className="flex items-center gap-6">
-          <div className="relative hidden md:block">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-dim" />
-            <input 
-              type="text" 
-              placeholder="Search keys..."
-              className="bg-card border border-border rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:border-accent transition-all w-64"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
         </div>
       </header>
 
@@ -374,8 +366,22 @@ export default function App() {
       ) : activeTab === 'licenses' ? (
         <div className="bento-grid grid grid-cols-2 lg:grid-cols-4">
           {/* Stats Section */}
-          <StatCard label="Total Geradas" value={stats.total} trend="All time" color="success" />
-          <StatCard label="Licenças Ativas" value={stats.activated} trend="Ready or in use" color="accent" />
+          <StatCard 
+            label="Total Geradas" 
+            value={stats.total} 
+            trend="All time" 
+            color="success" 
+            icon={<CheckCircle2 className="w-3 h-3" />}
+            subValue="Base de dados unificada"
+          />
+          <StatCard 
+            label="Licenças Ativas" 
+            value={stats.activated} 
+            trend="Ready or in use" 
+            color="accent" 
+            icon={<Shield className="w-3 h-3" />}
+            subValue={`${stats.total > 0 ? Math.round((stats.activated / stats.total) * 100) : 0}% da base total`}
+          />
 
           {/* Generator Card */}
           <div className="bento-card col-span-2 lg:col-span-2 row-span-1 border border-border">
@@ -408,10 +414,10 @@ export default function App() {
                 <label className="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-3 block">Nome da Loja</label>
                 <input 
                   type="text" 
-                  placeholder="Digite o nome da loja..."
-                  className="w-full bg-card border border-border rounded-xl py-3 px-4 text-xs font-bold text-text outline-none focus:border-accent"
-                  value={storeName}
-                  onChange={(e) => setStoreName(e.target.value)}
+                  placeholder="Ex: Loja do João"
+                  className="w-full bg-card border border-border rounded-xl py-3 px-4 text-xs font-bold text-text outline-none focus:border-accent transition-all"
+                  value={shopName}
+                  onChange={(e) => setShopName(e.target.value)}
                 />
               </div>
 
@@ -442,6 +448,16 @@ export default function App() {
                 <RefreshCw className={`w-4 h-4 ${isGenerating ? 'animate-spin' : ''}`} />
                 {isGenerating ? 'Generating...' : 'Gerar Chave de Ativação'}
               </button>
+              
+              <div className="mt-4 p-3 bg-bg/50 border border-border rounded-lg flex items-center gap-3">
+                <div className="p-2 bg-success/10 rounded-md">
+                  <CheckCircle2 className="w-3 h-3 text-success" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-text uppercase tracking-tight">Pronto para Sincronizar</span>
+                  <span className="text-[9px] text-text-dim leading-none">As chaves geradas são espelhadas instantaneamente.</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -449,17 +465,29 @@ export default function App() {
           <div className="bento-card col-span-2 lg:col-span-4 overflow-hidden !p-0 mt-6">
             <div className="p-6 border-b border-border flex items-center justify-between bg-card/50">
               <h2 className="text-sm font-bold uppercase tracking-wider text-text-dim">Gerenciamento de Licenças</h2>
-              <div className="flex gap-2 items-center">
-                <Filter className="w-4 h-4 text-text-dim" />
-                <select 
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value as any)}
-                  className="bg-transparent text-[10px] font-bold uppercase text-text-dim focus:outline-none cursor-pointer"
-                >
-                  <option value="all">Filtro: Todos</option>
-                  <option value="activated">Ativado</option>
-                  <option value="expired">Expirado</option>
-                </select>
+              <div className="flex gap-6 items-center">
+                <div className="relative hidden md:block">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-dim" />
+                  <input 
+                    type="text" 
+                    placeholder="Buscar por loja, HWID..."
+                    className="bg-bg/50 border border-border rounded-lg py-1.5 pl-9 pr-4 text-[10px] font-bold focus:outline-none focus:border-accent transition-all w-64 uppercase tracking-wider"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2 items-center">
+                  <Filter className="w-4 h-4 text-text-dim" />
+                  <select 
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as any)}
+                    className="bg-transparent text-[10px] font-bold uppercase text-text-dim focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">Filtro: Todos</option>
+                    <option value="activated">Ativado</option>
+                    <option value="expired">Expirado</option>
+                  </select>
+                </div>
               </div>
             </div>
             
@@ -492,11 +520,11 @@ export default function App() {
                         animate={{ opacity: 1 }}
                         className="group transition-colors hover:bg-white/[0.02]"
                       >
-                         <td className="px-6 py-4">
-                          <span className="text-[10px] font-bold text-accent uppercase tracking-wider">{item.storeName || '-'}</span>
+                        <td className="px-6 py-4">
+                          <span className="text-[10px] font-bold text-text-dim">{item.shopName || 'N/A'}</span>
                         </td>
                         <td className="px-6 py-4">
-                          <span className="font-mono text-text-dim text-xs font-medium">{item.key}</span>
+                          <span className="font-mono text-accent text-xs font-medium">{item.key}</span>
                         </td>
                         <td className="px-6 py-4">
                           <span className="text-[10px] font-bold text-text-dim">{item.database?.name || 'Local Only'}</span>
@@ -863,19 +891,50 @@ export default function App() {
   );
 }
 
-function StatCard({ label, value, trend, color }: { label: string, value: number | string, trend: string, color: 'accent' | 'error' | 'success' }) {
-  const colors = {
+function StatCard({ label, value, trend, color, icon, subValue }: { label: string, value: number | string, trend: string, color: 'accent' | 'error' | 'success', icon?: React.ReactNode, subValue?: string }) {
+  const textColor = {
     accent: 'text-accent',
     error: 'text-error',
     success: 'text-success',
   };
 
+  const bgColor = {
+    accent: 'bg-accent',
+    error: 'bg-error',
+    success: 'bg-success',
+  };
+
   return (
-    <div className="bento-card">
-      <span className="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2">{label}</span>
-      <span className={`text-4xl font-black font-mono tracking-tighter mb-4 ${colors[color]}`}>{value}</span>
-      <span className="text-[10px] text-success font-medium flex items-center gap-1 mt-auto">
-        <div className="w-1 h-1 rounded-full bg-success" />
+    <div className="bento-card flex flex-col relative overflow-hidden group">
+      {/* Background Decor */}
+      <div className={`absolute -right-4 -top-4 w-16 h-16 opacity-5 rounded-full ${bgColor[color]} group-hover:scale-125 transition-transform duration-500`} />
+      
+      <div className="flex justify-between items-center mb-4">
+        <span className="text-[10px] font-bold text-text-dim uppercase tracking-widest">{label}</span>
+        {icon && <div className={`${textColor[color]} opacity-50`}>{icon}</div>}
+      </div>
+
+      <div className="flex flex-col my-auto">
+        <span className={`text-5xl font-black font-mono tracking-tighter ${textColor[color]}`}>{value}</span>
+        {subValue && (
+          <span className="text-[10px] font-bold text-text-dim/60 uppercase tracking-tighter mt-1">
+            {subValue}
+          </span>
+        )}
+      </div>
+
+      {/* Visual Indicator (Filler) */}
+      <div className="w-full h-1 bg-border/40 rounded-full mt-6 mb-4 overflow-hidden">
+        <motion.div 
+          initial={{ width: 0 }}
+          animate={{ width: '100%' }}
+          transition={{ duration: 1, ease: "easeOut" }}
+          className={`h-full opacity-40 ${bgColor[color]}`}
+        />
+      </div>
+
+      <span className="text-[10px] text-success font-medium flex items-center gap-1">
+        <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
         {trend}
       </span>
     </div>

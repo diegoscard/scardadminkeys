@@ -126,7 +126,7 @@ app.get("/api/keys", async (req, res) => {
 });
 
 app.post("/api/keys", async (req, res) => {
-  const { key, validityDays, databaseId, storeName } = req.body;
+  const { key, validityDays, databaseId, shopName } = req.body;
   try {
     let externalDbName = 'Local Only';
     let expiresAt = new Date();
@@ -181,7 +181,7 @@ app.post("/api/keys", async (req, res) => {
       data: {
         key,
         validityDays,
-        storeName,
+        shopName,
         databaseId: databaseId ? parseInt(databaseId) : null,
         status: 'activated', // Defaulting to activated initially instead of available
       },
