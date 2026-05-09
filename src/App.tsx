@@ -20,9 +20,13 @@ import {
   Edit2,
   Copy,
   Check,
-  Minus
+  Minus,
+  Lock,
+  User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './lib/firebase';
+import { User as FirebaseUser } from 'firebase/auth';
 import { ActivationKey, KeyStatus, ManagedDatabase, DashboardStats } from './types';
 
 // Helper to generate key: XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
@@ -33,6 +37,8 @@ const generateKey = () => {
 };
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState<ActivationKey[]>([]);
   const [databases, setDatabases] = useState<ManagedDatabase[]>([]);
@@ -120,11 +126,43 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchData();
-    setLoading(false);
-    const interval = setInterval(fetchData, 10000); // Polling every 10s as it's fullstack now
-    return () => clearInterval(interval);
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+      setAuthLoading(false);
+      if (user) {
+        fetchData();
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (currentUser) {
+      const interval = setInterval(fetchData, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUser]);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (err) {
+      console.error("Login failed:", err);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setKeys([]);
+      setDatabases([]);
+      setStats({ total: 0, activated: 0, expired: 0, systems: 0 });
+    } catch (err) {
+      console.error("Logout failed:", err);
+    }
+  };
 
   const filteredKeys = useMemo(() => {
     return keys.filter(k => {
@@ -307,10 +345,41 @@ export default function App() {
     setRenewDays(30);
   };
 
-  if (loading) {
+  if (authLoading) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-accent"></div>
+        <RefreshCw className="w-8 h-8 text-accent animate-spin" />
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-md w-full bento-card p-8 border border-border shadow-2xl flex flex-col items-center text-center"
+        >
+          <div className="w-16 h-16 bg-accent/20 rounded-2xl flex items-center justify-center mb-6">
+            <Lock className="w-8 h-8 text-accent" />
+          </div>
+          <h1 className="text-3xl font-black mb-2 uppercase tracking-tighter">Acesso Restrito</h1>
+          <p className="text-text-dim text-sm mb-8">O painel administrativo do Scard Admin Keys é protegido. Por favor, autentique-se para continuar.</p>
+          
+          <button 
+            onClick={handleLogin}
+            className="w-full bg-accent hover:bg-opacity-90 text-white font-black py-4 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-accent/20"
+          >
+            <User className="w-5 h-5" />
+            Entrar com Google
+          </button>
+          
+          <div className="mt-8 flex items-center gap-2 text-[10px] text-text-dim font-bold uppercase tracking-widest">
+            <Shield className="w-3 h-3" />
+            Segurança de Nível Bancário Protegida por Firebase
+          </div>
+        </motion.div>
       </div>
     );
   }
@@ -342,6 +411,20 @@ export default function App() {
               </nav>
             </div>
           </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex flex-col items-end">
+            <span className="text-[10px] font-black uppercase text-accent leading-none mb-1">Conectado</span>
+            <span className="text-[11px] font-bold text-text-dim/80 lowercase leading-none">{currentUser.email}</span>
+          </div>
+          <button 
+            onClick={handleLogout}
+            className="p-2.5 rounded-xl border border-border/50 hover:bg-error/10 hover:text-error transition-all group active:scale-90"
+            title="Sair do painel"
+          >
+            <LogOut className="w-4 h-4 group-hover:rotate-12 transition-transform" />
+          </button>
         </div>
       </header>
 

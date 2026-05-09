@@ -3,24 +3,61 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Scard Admin Keys</title>
+    <title>Scard Admin Keys 0.1</title>
     <script>
-      // Suppress benign sandbox environment errors
-      const originalError = console.error;
-      console.error = (...args) => {
-        if (args[0] && typeof args[0] === 'string' && (
-          args[0].includes('[vite] failed to connect to websocket') || 
-          args[0].includes('WebSocket closed without opened')
-        )) {
-          return;
-        }
-        originalError.apply(console, args);
-      };
-      window.addEventListener('unhandledrejection', (event) => {
-        if (event.reason && event.reason.message && event.reason.message.includes('WebSocket closed')) {
-          event.preventDefault();
-        }
-      });
+      // Suppression script to eliminate Vite HMR/WebSocket noise in sandbox environment
+      (function() {
+        const suppressStrings = [
+          '[vite] failed to connect to websocket',
+          'WebSocket closed without opened',
+          'HMR',
+          'Download the React DevTools'
+        ];
+
+        const isBenign = (val) => {
+          if (!val) return false;
+          const str = typeof val === 'string' ? val : (val.message || String(val));
+          return suppressStrings.some(s => str.includes(s));
+        };
+
+        // Overwrite console methods to hide matched errors/warnings
+        const wrap = (original) => (...args) => {
+          if (args.some(isBenign)) return;
+          original.apply(console, args);
+        };
+        console.error = wrap(console.error);
+        console.warn = wrap(console.warn);
+
+        // Prevent Vite from even trying to open the WebSocket
+        const NativeWebSocket = window.WebSocket;
+        window.WebSocket = function(url, protocols) {
+          if (url && typeof url === 'string' && (url.includes('vite') || url.includes('hmr'))) {
+            return {
+              url: url,
+              readyState: 3, // CLOSED
+              addEventListener: () => {},
+              removeEventListener: () => {},
+              send: () => {},
+              close: () => {},
+              dispatchEvent: () => false,
+              onopen: null,
+              onclose: null,
+              onerror: null,
+              onmessage: null
+            };
+          }
+          return new NativeWebSocket(url, protocols);
+        };
+        window.WebSocket.prototype = NativeWebSocket.prototype;
+
+        // Catch and prevent unhandled promise rejections related to WebSockets
+        window.addEventListener('unhandledrejection', (event) => {
+          if (isBenign(event.reason)) {
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }, true);
+      })();
     </script>
   </head>
   <body>
