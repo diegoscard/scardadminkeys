@@ -25,8 +25,6 @@ import {
   User
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, googleProvider, signInWithPopup, signOut, onAuthStateChanged } from './lib/firebase';
-import { User as FirebaseUser } from 'firebase/auth';
 import { ActivationKey, KeyStatus, ManagedDatabase, DashboardStats } from './types';
 
 // Helper to generate key: XXXXX-XXXXX-XXXXX-XXXXX-XXXXX
@@ -37,8 +35,11 @@ const generateKey = () => {
 };
 
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ username: string } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [loginUsername, setLoginUsername] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState<ActivationKey[]>([]);
   const [databases, setDatabases] = useState<ManagedDatabase[]>([]);
@@ -126,16 +127,13 @@ export default function App() {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
-      setAuthLoading(false);
-      if (user) {
-        fetchData();
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
+    const savedUser = localStorage.getItem('scard_admin_user');
+    if (savedUser) {
+      setCurrentUser(JSON.parse(savedUser));
+      fetchData();
+      setLoading(false);
+    }
+    setAuthLoading(false);
   }, []);
 
   useEffect(() => {
@@ -145,23 +143,27 @@ export default function App() {
     }
   }, [currentUser]);
 
-  const handleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (err) {
-      console.error("Login failed:", err);
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError('');
+    
+    if (loginUsername === 'master' && loginPassword === '965088') {
+      const user = { username: 'master' };
+      setCurrentUser(user);
+      localStorage.setItem('scard_admin_user', JSON.stringify(user));
+      fetchData();
+      setLoading(false);
+    } else {
+      setLoginError('Usuário ou senha incorretos.');
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-      setKeys([]);
-      setDatabases([]);
-      setStats({ total: 0, activated: 0, expired: 0, systems: 0 });
-    } catch (err) {
-      console.error("Logout failed:", err);
-    }
+  const handleLogout = () => {
+    setCurrentUser(null);
+    localStorage.removeItem('scard_admin_user');
+    setKeys([]);
+    setDatabases([]);
+    setStats({ total: 0, activated: 0, expired: 0, systems: 0 });
   };
 
   const filteredKeys = useMemo(() => {
@@ -359,25 +361,54 @@ export default function App() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bento-card p-8 border border-border shadow-2xl flex flex-col items-center text-center"
+          className="max-w-md w-full bento-card p-8 border border-border shadow-2xl flex flex-col items-center"
         >
           <div className="w-16 h-16 bg-accent/20 rounded-2xl flex items-center justify-center mb-6">
             <Lock className="w-8 h-8 text-accent" />
           </div>
-          <h1 className="text-3xl font-black mb-2 uppercase tracking-tighter">Acesso Restrito</h1>
-          <p className="text-text-dim text-sm mb-8">O painel administrativo do Scard Admin Keys é protegido. Por favor, autentique-se para continuar.</p>
+          <h1 className="text-3xl font-black mb-2 uppercase tracking-tighter text-center">Acesso Restrito</h1>
+          <p className="text-text-dim text-sm mb-8 text-center">O painel administrativo do Scard Admin Keys é protegido. Por favor, autentique-se para continuar.</p>
           
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-accent hover:bg-opacity-90 text-white font-black py-4 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-accent/20"
-          >
-            <User className="w-5 h-5" />
-            Entrar com Google
-          </button>
+          <form onSubmit={handleLogin} className="w-full space-y-4">
+            <div>
+              <label className="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2 block text-left">Usuário</label>
+              <input 
+                type="text" 
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                className="w-full bg-card border border-border rounded-xl py-3 px-4 text-sm font-bold text-text outline-none focus:border-accent transition-all"
+                placeholder="Nome de usuário"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-text-dim uppercase tracking-widest mb-2 block text-left">Senha</label>
+              <input 
+                type="password" 
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                className="w-full bg-card border border-border rounded-xl py-3 px-4 text-sm font-bold text-text outline-none focus:border-accent transition-all"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            
+            {loginError && (
+              <p className="text-error text-xs font-bold mt-2">{loginError}</p>
+            )}
+
+            <button 
+              type="submit"
+              className="w-full bg-accent hover:bg-opacity-90 text-white font-black py-4 rounded-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg shadow-accent/20 mt-4"
+            >
+              <KeyIcon className="w-4 h-4" />
+              Acessar Painel
+            </button>
+          </form>
           
           <div className="mt-8 flex items-center gap-2 text-[10px] text-text-dim font-bold uppercase tracking-widest">
             <Shield className="w-3 h-3" />
-            Segurança de Nível Bancário Protegida por Firebase
+            SISTEMA PROTEGIDO — ACESSO MASTER
           </div>
         </motion.div>
       </div>
@@ -416,7 +447,7 @@ export default function App() {
         <div className="flex items-center gap-4">
           <div className="hidden sm:flex flex-col items-end">
             <span className="text-[10px] font-black uppercase text-accent leading-none mb-1">Conectado</span>
-            <span className="text-[11px] font-bold text-text-dim/80 lowercase leading-none">{currentUser.email}</span>
+            <span className="text-[11px] font-bold text-text-dim/80 lowercase leading-none">{currentUser.username}</span>
           </div>
           <button 
             onClick={handleLogout}
