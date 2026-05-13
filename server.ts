@@ -8,7 +8,16 @@ import dotenv from "dotenv";
 import pkg from "pg";
 const { Client } = pkg;
 
-dotenv.config();
+dotenv.config({ override: true });
+
+// Fallback logic to support common environment variable names provided by users or platforms
+if (!process.env.DATABASE_URL) {
+  if (process.env.PRISMA_DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.PRISMA_DATABASE_URL;
+  } else if (process.env.POSTGRES_URL) {
+    process.env.DATABASE_URL = process.env.POSTGRES_URL;
+  }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
