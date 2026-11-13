@@ -13,7 +13,6 @@ import {
   LogOut,
   ChevronDown,
   Filter,
-  Monitor,
   Database,
   ExternalLink,
   PlusCircle,
@@ -171,7 +170,6 @@ export default function App() {
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = 
         k.key.toLowerCase().includes(searchLower) || 
-        (k.hwid && k.hwid.toLowerCase().includes(searchLower)) ||
         (k.shopName && k.shopName.toLowerCase().includes(searchLower)) ||
         (k.database?.name && k.database.name.toLowerCase().includes(searchLower));
       const matchesFilter = statusFilter === 'all' || k.status === statusFilter;
@@ -584,7 +582,7 @@ export default function App() {
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-dim" />
                   <input 
                     type="text" 
-                    placeholder="Buscar por loja, HWID..."
+                    placeholder="Buscar por loja, chave..."
                     className="bg-bg/50 border border-border rounded-lg py-1.5 pl-9 pr-4 text-[10px] font-bold focus:outline-none focus:border-accent transition-all w-64 uppercase tracking-wider"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -613,7 +611,6 @@ export default function App() {
                     <th className="px-6 py-4">Chave de Acesso</th>
                     <th className="px-6 py-4">Sistema Alvo</th>
                     <th className="px-6 py-4">Expira em</th>
-                    <th className="px-6 py-4">HWID (Placa-Mãe)</th>
                     <th className="px-6 py-4">Status</th>
                     <th className="px-6 py-4 text-right">Ações</th>
                   </tr>
@@ -621,7 +618,7 @@ export default function App() {
                 <tbody className="divide-y divide-border/50">
                   {filteredKeys.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-text-dim text-xs italic">
+                      <td colSpan={6} className="px-6 py-12 text-center text-text-dim text-xs italic">
                         Nenhuma licença encontrada.
                       </td>
                     </tr>
@@ -645,12 +642,26 @@ export default function App() {
                         </td>
                          <td className="px-6 py-4">
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-text-dim">
-                              {(() => {
-                                const start = item.activatedAt ? new Date(item.activatedAt) : new Date(item.createdAt);
-                                const end = new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
+                            <span className={`text-[10px] font-bold ${
+                              (() => {
+                                if (item.status === 'expired') return 'text-error';
+                                const start = new Date(item.createdAt);
+                                const end = item.expiresAt
+                                  ? new Date(item.expiresAt)
+                                  : new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
                                 const diff = Math.ceil((end.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                                if (item.status === 'expired' || diff <= 0) return <span className="text-error">Expirou</span>;
+                                if (diff <= 0) return 'text-error';
+                                return diff <= 5 ? 'text-warning' : 'text-success';
+                              })()
+                            }`}>
+                              {(() => {
+                                if (item.status === 'expired') return <span className="text-error">Expirou</span>;
+                                const start = new Date(item.createdAt);
+                                const end = item.expiresAt
+                                  ? new Date(item.expiresAt)
+                                  : new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
+                                const diff = Math.ceil((end.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                                if (diff <= 0) return <span className="text-error">Expirou</span>;
                                 return `${diff} dias restantes`;
                               })()}
                             </span>
@@ -694,16 +705,6 @@ export default function App() {
                               </button>
                             </div>
                           </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          {item.hwid ? (
-                            <div className="flex items-center gap-2">
-                              <Monitor className="w-3 h-3 text-text-dim" />
-                              <span className="font-mono text-text-dim text-[10px]">{item.hwid}</span>
-                            </div>
-                          ) : (
-                            <span className="text-text-dim/40 text-[10px] italic">Aguardando ativação...</span>
-                          )}
                         </td>
                         <td className="px-6 py-4">
                           <select

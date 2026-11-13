@@ -21,10 +21,8 @@ model LicenseKey {
   id           Int      @id @default(autoincrement())
   key          String   @unique @db.VarChar(255)
   status       String   @default("available") // available, activated, expired
-  hwid         String?  @db.VarChar(255)
   validityDays Int      @map("validity_days")
   createdAt    DateTime @default(now()) @map("created_at")
-  activatedAt  DateTime? @map("activated_at")
   expiresAt    DateTime? @map("expires_at")
   
   databaseId   Int?     @map("database_id")

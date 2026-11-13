@@ -12,10 +12,8 @@ export interface ActivationKey {
   key: string;
   status: KeyStatus;
   validityDays: number;
-  hwid?: string;
   shopName?: string;
   createdAt: string;
-  activatedAt?: string;
   expiresAt?: string;
   databaseId?: number;
   database?: ManagedDatabase;
