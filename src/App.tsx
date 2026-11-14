@@ -573,37 +573,174 @@ export default function App() {
             </div>
           </div>
 
-          {/* Table Card */}
+          {/* License Management Card */}
           <div className="bento-card col-span-2 lg:col-span-4 overflow-hidden !p-0 mt-6">
-            <div className="p-6 border-b border-border flex items-center justify-between bg-card/50">
+            <div className="p-4 sm:p-6 border-b border-border flex flex-col md:flex-row md:items-center justify-between gap-4 bg-card/50">
               <h2 className="text-sm font-bold uppercase tracking-wider text-text-dim">Gerenciamento de Licenças</h2>
-              <div className="flex gap-6 items-center">
-                <div className="relative hidden md:block">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-6 sm:items-center w-full md:w-auto">
+                <div className="relative w-full md:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-dim" />
                   <input 
                     type="text" 
                     placeholder="Buscar por loja, chave..."
-                    className="bg-bg/50 border border-border rounded-lg py-1.5 pl-9 pr-4 text-[10px] font-bold focus:outline-none focus:border-accent transition-all w-64 uppercase tracking-wider"
+                    className="bg-bg/50 border border-border rounded-lg py-2 md:py-1.5 pl-9 pr-4 text-[11px] md:text-[10px] font-bold focus:outline-none focus:border-accent transition-all w-full uppercase tracking-wider"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
-                <div className="flex gap-2 items-center">
+                <div className="flex gap-2 items-center self-end sm:self-auto">
                   <Filter className="w-4 h-4 text-text-dim" />
                   <select 
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as any)}
-                    className="bg-transparent text-[10px] font-bold uppercase text-text-dim focus:outline-none cursor-pointer"
+                    className="bg-transparent text-[11px] md:text-[10px] font-bold uppercase text-text-dim focus:outline-none cursor-pointer"
                   >
-                    <option value="all">Filtro: Todos</option>
-                    <option value="activated">Ativado</option>
-                    <option value="expired">Expirado</option>
+                    <option value="all" className="bg-bg">Filtro: Todos</option>
+                    <option value="activated" className="bg-bg">Ativado</option>
+                    <option value="expired" className="bg-bg">Expirado</option>
                   </select>
                 </div>
               </div>
             </div>
-            
-            <div className="overflow-x-auto">
+
+            {/* Mobile Card List (no horizontal scroll, always-visible actions) */}
+            <div className="md:hidden divide-y divide-border/60">
+              {filteredKeys.length === 0 ? (
+                <div className="px-4 py-12 text-center text-text-dim text-xs italic">
+                  Nenhuma licença encontrada.
+                </div>
+              ) : (
+                filteredKeys.map((item) => {
+                  const start = new Date(item.createdAt);
+                  const end = item.expiresAt
+                    ? new Date(item.expiresAt)
+                    : new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
+                  const diff = Math.ceil((end.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                  const isExpired = item.status === 'expired' || diff <= 0;
+                  const expColor = isExpired ? 'text-error' : diff <= 5 ? 'text-warning' : 'text-success';
+
+                  return (
+                    <div key={item.id} className="p-4 space-y-3.5 bg-card/30">
+                      {/* Header: Shop + System & Status */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-text truncate">
+                            {item.shopName || 'N/A'}
+                          </div>
+                          <div className="text-[10px] font-bold text-text-dim uppercase tracking-wider mt-0.5">
+                            Sistema: {item.database?.name || 'Local Only'}
+                          </div>
+                        </div>
+                        <select
+                          value={item.status}
+                          onChange={(e) => toggleStatus(item, e.target.value as 'activated' | 'expired')}
+                          className={`shrink-0 px-2.5 py-1 rounded-lg text-[10px] font-bold border focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer ${
+                            item.status === 'activated' ? 'bg-success/10 text-success border-success/20' :
+                            item.status === 'expired' ? 'bg-error/10 text-error border-error/20' :
+                            'bg-text-dim text-bg border-text-dim'
+                          }`}
+                        >
+                          <option value="activated" className="bg-bg text-success font-bold">ACTIVATED</option>
+                          <option value="expired" className="bg-bg text-error font-bold">EXPIRED</option>
+                        </select>
+                      </div>
+
+                      {/* Key box */}
+                      <div className="bg-bg/60 border border-border/70 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+                        <span className="font-mono text-accent text-xs font-medium break-all">
+                          {item.key}
+                        </span>
+                      </div>
+
+                      {/* Expiration + Quick +/- Days */}
+                      <div className="flex items-center justify-between gap-3 pt-0.5">
+                        <div>
+                          <span className="text-[9px] uppercase tracking-widest font-bold text-text-dim block">
+                            Expira em
+                          </span>
+                          <span className={`text-xs font-bold ${expColor}`}>
+                            {isExpired ? 'Expirou' : `${diff} dias restantes`}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={async () => {
+                              const days = parseInt(adjDaysMap[item.id]);
+                              if (isNaN(days) || days <= 0) return;
+                              await handleRenewKeyDirect(item.id, -days);
+                              setAdjDaysMap(prev => ({ ...prev, [item.id]: '' }));
+                            }}
+                            className="w-8 h-8 flex items-center justify-center hover:text-error text-text-dim bg-bg rounded-lg border border-border transition-colors active:scale-95"
+                            title={`Remover ${adjDaysMap[item.id] || 0} dia(s)`}
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="0"
+                            value={adjDaysMap[item.id] || ''}
+                            onChange={(e) => {
+                              setAdjDaysMap(prev => ({ ...prev, [item.id]: e.target.value }));
+                            }}
+                            className="w-11 h-8 bg-bg border border-border rounded-lg text-xs font-bold text-center appearance-none focus:border-accent outline-none placeholder:text-text-dim/30"
+                          />
+                          <button
+                            onClick={async () => {
+                              const days = parseInt(adjDaysMap[item.id]);
+                              if (isNaN(days) || days <= 0) return;
+                              await handleRenewKeyDirect(item.id, days);
+                              setAdjDaysMap(prev => ({ ...prev, [item.id]: '' }));
+                            }}
+                            className="w-8 h-8 flex items-center justify-center hover:text-accent text-text-dim bg-bg rounded-lg border border-border transition-colors active:scale-95"
+                            title={`Adicionar ${adjDaysMap[item.id] || 0} dia(s)`}
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Always-visible Actions Row */}
+                      <div className="grid grid-cols-3 gap-2 pt-1">
+                        <button
+                          onClick={() => handleCopyKey(item.key)}
+                          className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg bg-bg/70 border border-border/70 text-[11px] font-bold text-text-dim active:scale-95 transition-all"
+                        >
+                          {copiedKey === item.key ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-success" />
+                              <span className="text-success">Copiada</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span>Copiar</span>
+                            </>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => openRenewModalPerKey(item)}
+                          className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg bg-bg/70 border border-border/70 text-[11px] font-bold text-accent active:scale-95 transition-all"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          <span>Renovar</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteKey(item.id)}
+                          className="flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg bg-error/10 border border-error/20 text-[11px] font-bold text-error active:scale-95 transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Excluir</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-bg/50 text-[10px] uppercase font-bold tracking-widest text-text-dim border-b border-border">
@@ -721,7 +858,7 @@ export default function App() {
                           </select>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center justify-end gap-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                             <button 
                               onClick={() => handleCopyKey(item.key)}
                               className="p-1.5 text-text-dim hover:text-white transition-colors bg-bg/50 rounded-lg"
@@ -739,6 +876,7 @@ export default function App() {
                             <button 
                               onClick={() => handleDeleteKey(item.id)}
                               className="p-1.5 text-text-dim hover:text-error transition-colors bg-bg/50 rounded-lg"
+                              title="Excluir Chave"
                             >
                               <Trash2 className="w-3 h-3" />
                             </button>
