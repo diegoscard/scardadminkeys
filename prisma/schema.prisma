@@ -12,7 +12,7 @@ model ManagedDatabase {
   id        Int      @id @default(autoincrement())
   name      String   @db.VarChar(100)
   url       String   @unique @db.Text
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt String   @db.VarChar(50) @map("created_at")
   keys      LicenseKey[]
 
   @@map("managed_databases")
@@ -23,8 +23,8 @@ model LicenseKey {
   key          String   @unique @db.VarChar(255)
   status       String   @default("available") // available, activated, expired
   validityDays Int      @map("validity_days")
-  createdAt    DateTime @default(now()) @map("created_at")
-  expiresAt    DateTime? @map("expires_at")
+  createdAt    String   @db.VarChar(50) @map("created_at")
+  expiresAt    String?  @db.VarChar(50) @map("expires_at")
   
   databaseId   Int?     @map("database_id")
   database     ManagedDatabase? @relation(fields: [databaseId], references: [id])

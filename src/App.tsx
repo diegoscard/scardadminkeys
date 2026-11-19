@@ -33,6 +33,20 @@ const generateKey = () => {
   return `${segment()}-${segment()}-${segment()}-${segment()}-${segment()}`;
 };
 
+const parseDateBR = (value?: string | null): Date | null => {
+  if (!value) return null;
+  const brMatch = value
+    .trim()
+    .match(/^(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (brMatch) {
+    const [, dd, mm, yyyy, hh = '00', min = '00', ss = '00'] = brMatch;
+    const parsed = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}-03:00`);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+  const fallback = new Date(value);
+  return isNaN(fallback.getTime()) ? null : fallback;
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState<{ username: string } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -611,10 +625,10 @@ export default function App() {
                 </div>
               ) : (
                 filteredKeys.map((item) => {
-                  const start = new Date(item.createdAt);
-                  const end = item.expiresAt
-                    ? new Date(item.expiresAt)
-                    : new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
+                  const start = parseDateBR(item.createdAt) || new Date();
+                  const end =
+                    parseDateBR(item.expiresAt) ||
+                    new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
                   const diff = Math.ceil((end.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
                   const isExpired = item.status === 'expired' || diff <= 0;
                   const expColor = isExpired ? 'text-error' : diff <= 5 ? 'text-warning' : 'text-success';
@@ -782,10 +796,10 @@ export default function App() {
                             <span className={`text-[10px] font-bold ${
                               (() => {
                                 if (item.status === 'expired') return 'text-error';
-                                const start = new Date(item.createdAt);
-                                const end = item.expiresAt
-                                  ? new Date(item.expiresAt)
-                                  : new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
+                                const start = parseDateBR(item.createdAt) || new Date();
+                                const end =
+                                  parseDateBR(item.expiresAt) ||
+                                  new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
                                 const diff = Math.ceil((end.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
                                 if (diff <= 0) return 'text-error';
                                 return diff <= 5 ? 'text-warning' : 'text-success';
@@ -793,10 +807,10 @@ export default function App() {
                             }`}>
                               {(() => {
                                 if (item.status === 'expired') return <span className="text-error">Expirou</span>;
-                                const start = new Date(item.createdAt);
-                                const end = item.expiresAt
-                                  ? new Date(item.expiresAt)
-                                  : new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
+                                const start = parseDateBR(item.createdAt) || new Date();
+                                const end =
+                                  parseDateBR(item.expiresAt) ||
+                                  new Date(start.getTime() + item.validityDays * 24 * 60 * 60 * 1000);
                                 const diff = Math.ceil((end.getTime() - new Date().getTime()) / (1000 * 3600 * 24));
                                 if (diff <= 0) return <span className="text-error">Expirou</span>;
                                 return `${diff} dias restantes`;

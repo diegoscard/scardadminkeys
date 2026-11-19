@@ -22,6 +22,45 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 export const prisma = globalForPrisma.prisma ?? new PrismaClient();
 globalForPrisma.prisma = prisma;
 
+const BRAZIL_TZ = "America/Sao_Paulo";
+
+function formatDateBR(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: BRAZIL_TZ,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const map: Record<string, string> = {};
+  for (const p of parts) {
+    if (p.type !== "literal") map[p.type] = p.value;
+  }
+  const hour = map.hour === "24" ? "00" : map.hour;
+  return `${map.day}-${map.month}-${map.year} ${hour}:${map.minute}:${map.second}`;
+}
+
+function parseDateBR(value: string | Date | null | undefined): Date | null {
+  if (!value) return null;
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+
+  const brMatch = value
+    .trim()
+    .match(/^(\d{2})-(\d{2})-(\d{4})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (brMatch) {
+    const [, dd, mm, yyyy, hh = "00", min = "00", ss = "00"] = brMatch;
+    const parsed = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}-03:00`);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  const fallback = new Date(value);
+  return isNaN(fallback.getTime()) ? null : fallback;
+}
+
 const app = express();
 
 // Middleware to check for DATABASE_URL
@@ -53,7 +92,7 @@ app.get("/api/keys", async (req, res) => {
   try {
     const keys = await prisma.licenseKey.findMany({
       include: { database: true },
-      orderBy: { createdAt: "desc" },
+      orderBy: { id: "desc" },
     });
 
     const dbKeysMap = new Map();
@@ -113,13 +152,14 @@ app.get("/api/keys", async (req, res) => {
             const dataToUpdate: any = {};
 
             if (colSet.has("expires_at") && extData.expires_at) {
-              const extExpiresAt = new Date(extData.expires_at);
-              const localExpiresAt = localKey.expiresAt ? new Date(localKey.expiresAt) : null;
+              const extExpiresAt = parseDateBR(extData.expires_at);
+              const localExpiresAt = parseDateBR(localKey.expiresAt);
               if (
-                !localExpiresAt ||
-                Math.abs(extExpiresAt.getTime() - localExpiresAt.getTime()) > 60000
+                extExpiresAt &&
+                (!localExpiresAt ||
+                  Math.abs(extExpiresAt.getTime() - localExpiresAt.getTime()) > 60000)
               ) {
-                dataToUpdate.expiresAt = extExpiresAt;
+                dataToUpdate.expiresAt = formatDateBR(extExpiresAt);
               }
             }
 
@@ -128,8 +168,7 @@ app.get("/api/keys", async (req, res) => {
             }
 
             const effectiveExpiresAt =
-              dataToUpdate.expiresAt ||
-              (localKey.expiresAt ? new Date(localKey.expiresAt) : null);
+              parseDateBR(dataToUpdate.expiresAt) || parseDateBR(localKey.expiresAt);
             const isDateExpired = effectiveExpiresAt
               ? effectiveExpiresAt.getTime() <= now
               : false;
@@ -180,8 +219,8 @@ app.get("/api/keys", async (req, res) => {
 app.post("/api/keys", async (req, res) => {
   const { key, validityDays, databaseId, shopName } = req.body;
   try {
-    let expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + validityDays);
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
     if (databaseId) {
       const targetDb = await prisma.managedDatabase.findUnique({
@@ -233,7 +272,8 @@ app.post("/api/keys", async (req, res) => {
         key,
         validityDays,
         shopName,
-        expiresAt,
+        createdAt: formatDateBR(now),
+        expiresAt: formatDateBR(expiresAt),
         databaseId: databaseId ? parseInt(databaseId) : null,
         status: "activated",
       },
@@ -340,10 +380,10 @@ app.post("/api/keys/:id/renew", async (req, res) => {
 
     const newValidityDays = Math.max(0, key.validityDays + additionalDays);
 
-    const fallbackStart = new Date(key.createdAt);
-    const currentEnd = key.expiresAt
-      ? new Date(key.expiresAt)
-      : new Date(fallbackStart.getTime() + key.validityDays * 24 * 60 * 60 * 1000);
+    const fallbackStart = parseDateBR(key.createdAt) || new Date();
+    const currentEnd =
+      parseDateBR(key.expiresAt) ||
+      new Date(fallbackStart.getTime() + key.validityDays * 24 * 60 * 60 * 1000);
 
     const baseTime =
       additionalDays > 0 ? Math.max(currentEnd.getTime(), Date.now()) : currentEnd.getTime();
@@ -356,7 +396,7 @@ app.post("/api/keys/:id/renew", async (req, res) => {
       where: { id: parseInt(id) },
       data: {
         validityDays: newValidityDays,
-        expiresAt: newExpiresAt,
+        expiresAt: formatDateBR(newExpiresAt),
         status: finalStatus,
       },
     });
@@ -413,7 +453,7 @@ app.post("/api/databases", async (req, res) => {
   const { name, url } = req.body;
   try {
     const newDb = await prisma.managedDatabase.create({
-      data: { name, url },
+      data: { name, url, createdAt: formatDateBR(new Date()) },
     });
     res.status(201).json(newDb);
   } catch (err: any) {
@@ -487,8 +527,10 @@ app.post("/api/activate", async (req, res) => {
     }
 
     const now = new Date();
-    const expiresAt =
-      license.expiresAt || new Date(now.getTime() + license.validityDays * 24 * 60 * 60 * 1000);
+    const existingExpiresAt = parseDateBR(license.expiresAt);
+    const expiresAtDate =
+      existingExpiresAt || new Date(now.getTime() + license.validityDays * 24 * 60 * 60 * 1000);
+    const expiresAt = formatDateBR(expiresAtDate);
 
     await prisma.licenseKey.update({
       where: { id: license.id },
